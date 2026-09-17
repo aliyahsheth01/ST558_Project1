@@ -7,4 +7,176 @@ editor: visual
 
 ## Introduction
 
-This project uses data from the Census Public Use Microdata Sample (PUMS) API. The goal is to create functions that retrieve, process, summarize, and visualize Census data for selected years and variables.
+This project develops functions for retrieving, processing, summarizing, and visualizing data from the Census Public Use Microdata Sample (PUMS) API. Data from the 2021 through 2024 surveys will be used. The project first processes Census variable metadata, then develops functions to query and combine PUMS data, followed by custom methods for weighted summaries and graphical displays.
+
+## Part 1: Data Processing
+
+### Parsing Variable Values
+
+The first step is to obtain the variable descriptions for the Census PUMS data. 
+The variable metadata are available as JSON files for each survey year. These 
+files contain information about the variables and, where applicable, the values 
+and labels associated with categorical variables.
+
+The code below begins by querying the 2024 variable metadata to examine the 
+structure of the returned JSON data. A status code of 200 indicates that the request was successful. 
+
+```{r}
+# Load package used to query the Census API
+library(httr)
+
+# URL for the 2024 PUMS variable metadata
+url_2024 <- "https://api.census.gov/data/2024/acs/acs1/pums/variables.json"
+
+# Query the Census API
+response_2024 <- GET(url_2024)
+
+# Check whether the request was successful
+status_code(response_2024)
+```
+
+The returned JSON content is then parsed and examined to determine how the variable 
+information is stored.
+
+```{r}
+# Parse the JSON response
+metadata_2024 <- content(response_2024)
+
+# Examine the top-level structure
+names(metadata_2024)
+
+# Examine the metadata for the SEX variable
+metadata_2024$variables$SEX
+
+# Examine the components stored for SEX
+names(metadata_2024$variables$SEX)
+
+# Variables required for the project
+variables_2024 <- c(
+  "AGEP", "GASP", "GRPIP", "JWAP", "JWDP", "JWMNP",
+  "PWGTP", "FER", "HHL", "SCH", "SCHL", "SEX",
+  "STATE", "REGION", "DIVISION"
+)
+
+# Check whether any required variables are missing
+variables_2024[
+  !variables_2024 %in% names(metadata_2024$variables)
+]
+```
+All variables required for the 2024 portion of the project are present in the Census metadata. 
+
+#### Creating a Function to Parse Variable Values
+
+After examining the structure of the 2024 variable metadata, a function is created to automate this process for the 2021 through 2024 survey years. The function identifies the appropriate state variable for each year, retrieves the corresponding JSON file, and extracts the value information for the variables required for this project.
+
+```{r}
+# Function to retrieve variable values for a specified survey year
+get_variable_values <- function(year) {
+
+  # Check that a valid survey year was provided
+  if (!year %in% c(2021, 2022, 2023, 2024)) {
+    stop("Year must be 2021, 2022, 2023, or 2024.")
+  }
+
+  # Determine the appropriate state variable name
+  if (year %in% c(2021, 2022)) {
+    state_variable <- "ST"
+  } else {
+    state_variable <- "STATE"
+  }
+
+  # Define the variables needed for the project
+  variables <- c(
+    "AGEP", "GASP", "GRPIP", "JWAP", "JWDP", "JWMNP",
+    "PWGTP", "FER", "HHL", "SCH", "SCHL", "SEX",
+    state_variable, "REGION", "DIVISION"
+  )
+
+  # Create the URL for the selected year
+  url <- paste0(
+    "https://api.census.gov/data/",
+    year,
+    "/acs/acs1/pums/variables.json"
+  )
+
+  # Query and parse the variable metadata
+  response <- GET(url)
+
+  if (status_code(response) != 200) {
+    stop("The Census API request was not successful.")
+  }
+
+  metadata <- content(response)
+
+  # Extract the available values for each required variable
+  variable_values <- lapply(
+    variables,
+    function(variable) metadata$variables[[variable]]$values$item
+  )
+
+  # Assign variable names to the resulting list
+  names(variable_values) <- variables
+
+  return(variable_values)
+}
+```
+
+The function is tested using the 2024 survey year, to ensure it produces the expected results. 
+
+```{r}
+# Test the function using the 2024 survey year
+variable_values_2024 <- get_variable_values(2024)
+
+# Examine the variables contained in the resulting list
+names(variable_values_2024)
+
+# Examine the values returned for SEX
+variable_values_2024$SEX
+```
+#### Applying the Function to Parse Variable Values
+
+The function is then applied to each of the four survey years to create a separate list of variable values for 2021, 2022, 2023, and 2024.
+
+```{r}
+# Create variable value lists for each survey year
+variable_values_2021 <- get_variable_values(2021)
+variable_values_2022 <- get_variable_values(2022)
+variable_values_2023 <- get_variable_values(2023)
+variable_values_2024 <- get_variable_values(2024)
+
+# Combine the four yearly lists
+variable_values <- list(
+  "2021" = variable_values_2021,
+  "2022" = variable_values_2022,
+  "2023" = variable_values_2023,
+  "2024" = variable_values_2024
+)
+
+# Examine the survey years stored in the list
+names(variable_values)
+
+# Check the state variable used for each survey year
+names(variable_values$`2021`)
+names(variable_values$`2024`)
+```
+The results confirm that the function correctly uses "ST" for the 2021 and 2022 surveys and "STATE" for the 2023 and 2024 surveys.
+
+```{r}
+# Save the variable value lists for later use
+saveRDS(
+  variable_values,
+  file = "data/census_variable_values.rds"
+)
+
+# Read the saved file to verify that it was created successfully
+variable_values_check <- readRDS(
+  "data/census_variable_values.rds"
+)
+
+names(variable_values_check)
+```
+The saved object contains the variable-value information for each survey year and can be loaded later when categorical and geographic variables are converted to their appropriate labels.
+
+### Parsing API Data
+
+
