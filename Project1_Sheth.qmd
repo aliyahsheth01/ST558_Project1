@@ -7,4 +7,4 @@ editor: visual
 
 ## Introduction
 
-This project uses data from the Census Public Use Microdata Sample (PUMS) API. The goal is to create functions that retrieve, process, summarize, and visualize Census data for selected years and variables.TRIAL!
+This project uses data from the Census Public Use Microdata Sample (PUMS) API. The goal is to create functions that retrieve, process, summarize, and visualize Census data for selected years and variables.
