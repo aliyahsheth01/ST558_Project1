@@ -1,0 +1,10 @@
+---
+title: "ST558 Project 1"
+author: "Aliyah Sheth"
+format: html
+editor: visual
+---
+
+## Introduction
+
+This project uses data from the Census Public Use Microdata Sample (PUMS) API. The goal is to create functions that retrieve, process, summarize, and visualize Census data for selected years and variables.
