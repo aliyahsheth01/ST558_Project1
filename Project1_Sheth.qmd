@@ -258,3 +258,213 @@ pums_tibble <- parse_pums_response(pums_content)
 head(pums_tibble)
 ```
 The helper function successfully converts the parsed API response into a tibble. At this stage, all returned variables are stored as character values; appropriate numeric, time, and categorical conversions will be performed in the subsequent data-processing function.
+
+#### Creating the Single-Year PUMS Query Function
+
+The next step is to create a function that allows the user to specify the survey year, numeric and categorical variables, and geographic level to return. The function checks that the requested inputs meet the project requirements before building and submitting the API request. The user can select State, Division, or Region and can request either a specific geography or all values within that geography.
+
+```{r}
+# Function to query one year of PUMS data
+get_pums_data <- function(
+  year = 2024,
+  numeric_vars = c("AGEP", "PWGTP"),
+  categorical_vars = "SEX",
+  geography = "State",
+  geography_value = NULL
+) {
+
+  # Define valid survey years
+  valid_years <- c(2021, 2022, 2023, 2024)
+
+  # Check that exactly one valid year was provided
+  if (length(year) != 1 || !year %in% valid_years) {
+    stop("Year must be one of 2021, 2022, 2023, or 2024.")
+  }
+
+  # Define valid numeric variables
+  valid_numeric_vars <- c(
+    "AGEP", "GASP", "GRPIP",
+    "JWAP", "JWDP", "JWMNP",
+    "PWGTP"
+  )
+
+  # Check that all numeric variables are valid
+  if (any(!numeric_vars %in% valid_numeric_vars)) {
+    stop("One or more numeric variables are not valid.")
+  }
+
+  # Check that PWGTP is included
+  if (!"PWGTP" %in% numeric_vars) {
+    stop("PWGTP must be included in numeric_vars.")
+  }
+
+  # Check that at least one numeric variable other than PWGTP is included
+  if (length(setdiff(numeric_vars, "PWGTP")) < 1) {
+    stop("At least one numeric variable other than PWGTP must be included.")
+  }
+
+  # Define valid categorical variables
+  valid_categorical_vars <- c(
+    "FER", "HHL", "SCH", "SCHL", "SEX"
+  )
+
+ # Check that at least one categorical variable was provided
+  if (length(categorical_vars) < 1) {
+    stop("At least one categorical variable must be included.")
+  }
+
+  # Check that all categorical variables are valid
+  if (any(!categorical_vars %in% valid_categorical_vars)) {
+    stop("One or more categorical variables are not valid.")
+  }
+
+  # Define valid geography levels
+  valid_geographies <- c("State", "Division", "Region")
+
+  # Check that exactly one valid geography level was provided
+  if (
+    length(geography) != 1 ||
+    !geography %in% valid_geographies
+  ) {
+    stop("Geography must be State, Division, or Region.")
+  }
+
+  # Load the saved variable-value information
+  geography_values <- readRDS(
+    "data/census_variable_values.rds"
+  )
+
+  # Select the metadata for the requested year
+  year_values <- geography_values[[as.character(year)]]
+
+  # Determine the geography variable and a default value
+  if (geography == "State") {
+
+    api_geography <- "state"
+
+    if (year %in% c(2021, 2022)) {
+      metadata_geography <- "ST"
+    } else {
+      metadata_geography <- "STATE"
+    }
+
+    default_geography_value <- "37"
+
+  } else if (geography == "Division") {
+
+    api_geography <- "division"
+    metadata_geography <- "DIVISION"
+    default_geography_value <- "5"
+
+  } else {
+
+    api_geography <- "region"
+    metadata_geography <- "REGION"
+    default_geography_value <- "3"
+  }
+
+  # Use the default geography value when none is supplied
+  if (is.null(geography_value)) {
+    geography_value <- default_geography_value
+  }
+
+  # Check that only one geography value was provided
+  if (length(geography_value) != 1) {
+    stop("Only one geography value or 'all' may be specified.")
+  }
+  
+  # Obtain the allowable geography codes from the saved metadata
+  valid_geography_values <- names(
+    year_values[[metadata_geography]]
+  )
+
+  # Allow the user to request all values for the geography
+  if (tolower(as.character(geography_value)) == "all") {
+
+    api_geography_value <- "*"
+
+  } else {
+
+    geography_value <- as.character(geography_value)
+
+    # Add a leading zero to one-digit state codes
+    if (
+      geography == "State" &&
+      nchar(geography_value) == 1
+    ) {
+      geography_value <- paste0("0", geography_value)
+    }
+
+    # Check that the requested geography value is valid
+    if (!geography_value %in% valid_geography_values) {
+      stop("The requested geography value is not valid.")
+    }
+
+    api_geography_value <- geography_value
+  }
+
+  # Combine the variables requested by the user
+  variables <- unique(
+    c(numeric_vars, categorical_vars)
+  )
+
+  # Convert the variable names into the format needed for the API
+  variable_string <- paste(
+    variables,
+    collapse = ","
+  )
+
+  # Retrieve the Census API key
+  census_key <- Sys.getenv("CENSUS_API_KEY")
+
+  if (census_key == "") {
+    stop("Census API key not found.")
+  }
+
+  # Build the API URL
+  pums_url <- paste0(
+    "https://api.census.gov/data/",
+    year,
+    "/acs/acs1/pums",
+    "?get=", variable_string,
+    "&for=", api_geography, ":", api_geography_value,
+    "&key=", census_key
+  )
+
+  # Query the Census API
+  response <- GET(pums_url)
+
+  if (status_code(response) != 200) {
+    stop("The Census API request was not successful.")
+  }
+
+  # Parse the returned JSON content
+  pums_content <- content(
+    response,
+    as = "parsed",
+    encoding = "UTF-8"
+  )
+
+  # Convert the returned content into a tibble
+  pums_data <- parse_pums_response(pums_content)
+
+  return(pums_data)
+}
+
+# Test the single-year function using its default values
+pums_test <- get_pums_data()
+
+# Examine the resulting tibble
+head(pums_test)
+
+# Test the function using the Region geography
+pums_region_test <- get_pums_data(
+  geography = "Region",
+  geography_value = "3"
+)
+
+# Examine the resulting tibble
+head(pums_region_test)
+```
+
+The single-year function successfully validates the requested year, variables, and geography and returns the selected PUMS data as a tibble. The default call returns data for North Carolina, while the second test confirms that the function can also return data for a specified Census region.
