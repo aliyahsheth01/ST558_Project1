@@ -18,6 +18,8 @@ The first step is to obtain the variable descriptions for the Census PUMS data. 
 The code below begins by querying the 2024 variable metadata to examine the structure of the returned JSON data. A status code of 200 indicates that the request was successful. 
 
 ```{r}
+#| message: false
+
 # Load packages used for this document
 library(httr)
 library(lubridate)
@@ -104,14 +106,15 @@ get_variable_values <- function(year) {
 
   metadata <- content(response)
 
+  # Create an empty list for the variable values
+  variable_values <- list()
+  
   # Extract the available values for each required variable
-  variable_values <- lapply(
-    variables,
-    function(variable) metadata$variables[[variable]]$values$item
-  )
-
-  # Assign variable names to the resulting list
-  names(variable_values) <- variables
+  for (variable in variables) {
+   variable_values[variable] <- list(
+     metadata$variables[[variable]]$values$item
+   )
+  }
 
   return(variable_values)
 }
@@ -205,7 +208,7 @@ status_code(pums_response)
 
 A status code of 200 indicates that the PUMS API request was successful. 
 
-The returned content is then parsed to examine how the observations are organized. Although the project instructions indicate that an API key is not required, the Census Bureau began requiring API keys for all Census Data API queries in 2026. Therefore, an API key stored as an environment variable is used for the PUMS data queries in this project.
+The returned content is then parsed to examine how the observations are organized. The current Census Microdata API requires an API key for data queries. Therefore, an API key stored as an environment variable is used for the PUMS queries in this project.
 
 ```{r}
 # Parse the API response
@@ -233,12 +236,20 @@ parse_pums_response <- function(pums_content) {
   # Extract the column names from the first element
   column_names <- unlist(pums_content[[1]])
 
-  # Combine the remaining elements into rows
-  data_matrix <- do.call(
-    rbind,
-    lapply(pums_content[-1], unlist)
+  # Create an empty matrix for the returned observations
+  data_matrix <- matrix(
+    NA_character_,
+    nrow = length(pums_content) - 1,
+    ncol = length(column_names)
   )
 
+  # Add each observation to the matrix
+  for (i in 2:length(pums_content)) {
+    data_matrix[i - 1, ] <- unlist(
+      pums_content[[i]]
+    )
+  }
+  
   # Convert to a data frame
   pums_data <- as.data.frame(
     data_matrix,
@@ -374,7 +385,7 @@ get_pums_data <- function(
   }
 
   # Check that at least one numeric variable other than PWGTP is included
-  if (length(setdiff(numeric_vars, "PWGTP")) < 1) {
+  if (length(numeric_vars[numeric_vars != "PWGTP"]) < 1) {
     stop("At least one numeric variable other than PWGTP must be included.")
   }
 
@@ -524,10 +535,9 @@ get_pums_data <- function(
   pums_data <- parse_pums_response(pums_content)
 
   # Identify numeric variables that are not time variables
-  regular_numeric_vars <- setdiff(
-    numeric_vars,
-    c("JWAP", "JWDP")
-  )
+  regular_numeric_vars <- numeric_vars[
+    !numeric_vars %in% c("JWAP", "JWDP")
+  ]
 
   # Convert the regular numeric variables to numeric values
   for (variable in regular_numeric_vars) {
@@ -537,10 +547,9 @@ get_pums_data <- function(
   }
 
   # Identify the requested time variables
-  time_vars <- intersect(
-    numeric_vars,
-    c("JWAP", "JWDP")
-  )
+  time_vars <- numeric_vars[
+    numeric_vars %in% c("JWAP", "JWDP")
+  ]
 
   # Convert requested time variables to midpoint time values
   for (variable in time_vars) {
