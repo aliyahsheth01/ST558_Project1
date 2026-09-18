@@ -13,10 +13,7 @@ This project develops functions for retrieving, processing, summarizing, and vis
 
 ### Parsing Variable Values
 
-The first step is to obtain the variable descriptions for the Census PUMS data. 
-The variable metadata are available as JSON files for each survey year. These 
-files contain information about the variables and, where applicable, the values 
-and labels associated with categorical variables.
+The first step is to obtain the variable descriptions for the Census PUMS data. The variable metadata are available as JSON files for each survey year. These files contain information about the variables and, where applicable, the values and labels associated with categorical variables.
 
 The code below begins by querying the 2024 variable metadata to examine the 
 structure of the returned JSON data. A status code of 200 indicates that the request was successful. 
@@ -179,4 +176,85 @@ The saved object contains the variable-value information for each survey year an
 
 ### Parsing API Data
 
+The next step is to query the PUMS API for person-level data. Before creating a general function, a single API request is examined to understand the structure of the data returned by the Census API.
 
+```{r}
+# Retrieve Census API key from the environment
+census_key <- Sys.getenv("CENSUS_API_KEY")
+
+# Check that an API key is available
+if (census_key == "") {
+  stop("Census API key not found.")
+}
+
+# Create a sample 2024 PUMS API request
+pums_url <- paste0(
+  "https://api.census.gov/data/2024/acs/acs1/pums",
+  "?get=SEX,AGEP,PWGTP",
+  "&for=state:37",
+  "&key=", census_key
+)
+
+# Query the Census API
+pums_response <- GET(pums_url)
+
+# Check whether the request was successful
+status_code(pums_response)
+```
+A status code of 200 indicates that the PUMS API request was successful. 
+
+The returned content is then parsed to examine how the observations are organized. Although the project instructions indicate that an API key is not required, the Census Bureau began requiring API keys for all Census Data API queries in 2026. Therefore, an API key stored as an environment variable is used for the PUMS data queries in this project.
+
+```{r}
+# Parse the API response
+pums_content <- content(
+  pums_response,
+  as = "parsed",
+  encoding = "UTF-8"
+)
+
+# Examine the first few elements of the returned object
+pums_content[1:3]
+
+# Examine the first row returned by the API
+pums_content[[1]]
+```
+#### Creating a Helper Function to Parse PUMS Data
+
+The PUMS API returns the column names as the first element of the parsed response and the observations as the remaining elements. A helper function is created to convert this structure into a tibble with the appropriate column names.
+
+```{r}
+# Helper function to convert parsed PUMS content into a tibble
+parse_pums_response <- function(pums_content) {
+
+  # Extract the column names from the first element
+  column_names <- unlist(pums_content[[1]])
+
+  # Combine the remaining elements into rows
+  data_matrix <- do.call(
+    rbind,
+    lapply(pums_content[-1], unlist)
+  )
+
+  # Convert to a data frame
+  pums_data <- as.data.frame(
+    data_matrix,
+    stringsAsFactors = FALSE
+  )
+
+  # Assign the column names
+  names(pums_data) <- column_names
+
+  # Convert to a tibble
+  pums_data <- tibble::as_tibble(pums_data)
+
+  return(pums_data)
+}
+
+# Test the helper function
+pums_tibble <- parse_pums_response(pums_content)
+
+# Examine the resulting tibble
+head(pums_tibble)
+```
+The helper function successfully converts the parsed API response into a tibble. At this stage, all returned variables are stored as character values; appropriate numeric, time, and categorical conversions will be performed in the subsequent data-processing function.
