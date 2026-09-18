@@ -538,8 +538,8 @@ get_pums_data <- function(
 
   # Identify the requested time variables
   time_vars <- intersect(
-  numeric_vars,
-  c("JWAP", "JWDP")
+    numeric_vars,
+    c("JWAP", "JWDP")
   )
 
   # Convert requested time variables to midpoint time values
@@ -625,4 +625,14 @@ head(pums_time_test)
 str(pums_time_test)
 class(pums_time_test)
 ```
+```{r}
+# Examine observations with available time values
+head(
+  pums_time_test[
+    !is.na(pums_time_test$JWAP),
+    c("JWAP", "JWDP")
+  ]
+)
+```
+
 
