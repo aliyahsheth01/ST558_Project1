@@ -15,12 +15,12 @@ This project develops functions for retrieving, processing, summarizing, and vis
 
 The first step is to obtain the variable descriptions for the Census PUMS data. The variable metadata are available as JSON files for each survey year. These files contain information about the variables and, where applicable, the values and labels associated with categorical variables.
 
-The code below begins by querying the 2024 variable metadata to examine the 
-structure of the returned JSON data. A status code of 200 indicates that the request was successful. 
+The code below begins by querying the 2024 variable metadata to examine the structure of the returned JSON data. A status code of 200 indicates that the request was successful. 
 
 ```{r}
-# Load package used to query the Census API
+# Load packages used for this document
 library(httr)
+library(lubridate)
 
 # URL for the 2024 PUMS variable metadata
 url_2024 <- "https://api.census.gov/data/2024/acs/acs1/pums/variables.json"
@@ -32,8 +32,7 @@ response_2024 <- GET(url_2024)
 status_code(response_2024)
 ```
 
-The returned JSON content is then parsed and examined to determine how the variable 
-information is stored.
+The returned JSON content is then parsed and examined to determine how the variable information is stored.
 
 ```{r}
 # Parse the JSON response
@@ -130,6 +129,7 @@ names(variable_values_2024)
 # Examine the values returned for SEX
 variable_values_2024$SEX
 ```
+
 #### Applying the Function to Parse Variable Values
 
 The function is then applied to each of the four survey years to create a separate list of variable values for 2021, 2022, 2023, and 2024.
@@ -156,6 +156,7 @@ names(variable_values)
 names(variable_values$`2021`)
 names(variable_values$`2024`)
 ```
+
 The results confirm that the function correctly uses "ST" for the 2021 and 2022 surveys and "STATE" for the 2023 and 2024 surveys.
 
 ```{r}
@@ -201,6 +202,7 @@ pums_response <- GET(pums_url)
 # Check whether the request was successful
 status_code(pums_response)
 ```
+
 A status code of 200 indicates that the PUMS API request was successful. 
 
 The returned content is then parsed to examine how the observations are organized. Although the project instructions indicate that an API key is not required, the Census Bureau began requiring API keys for all Census Data API queries in 2026. Therefore, an API key stored as an environment variable is used for the PUMS data queries in this project.
@@ -219,6 +221,7 @@ pums_content[1:3]
 # Examine the first row returned by the API
 pums_content[[1]]
 ```
+
 #### Creating a Helper Function to Parse PUMS Data
 
 The PUMS API returns the column names as the first element of the parsed response and the observations as the remaining elements. A helper function is created to convert this structure into a tibble with the appropriate column names.
@@ -258,6 +261,78 @@ pums_tibble <- parse_pums_response(pums_content)
 head(pums_tibble)
 ```
 The helper function successfully converts the parsed API response into a tibble. At this stage, all returned variables are stored as character values; appropriate numeric, time, and categorical conversions will be performed in the subsequent data-processing function.
+
+#### Creating a Helper Function for Time Variables
+
+The JWAP and JWDP variables represent times using coded ranges rather than exact times. To convert these variables into usable time values, a helper function is created to parse each time range and return its midpoint. A fixed reference date is used so that the resulting values can be stored as date-time objects; only the time component is relevant for this project.
+
+```{r}
+# Helper function to return the midpoint of a Census time range
+parse_time_midpoint <- function(time_ranges) {
+
+  # Create an empty time vector for the results
+  midpoint_times <- rep(
+    as.POSIXct(NA, tz = "UTC"),
+    length(time_ranges)
+  )
+
+  # Process each time range
+  for (i in seq_along(time_ranges)) {
+
+    # Leave missing time values as NA
+    if (is.na(time_ranges[i]) || time_ranges[i] == "") {
+      next
+    }
+
+    # Remove periods from a.m. and p.m.
+    clean_range <- gsub(
+      "\\.",
+      "",
+      time_ranges[i]
+    )
+
+    # Separate the beginning and ending times
+    time_parts <- strsplit(
+      clean_range,
+      " to "
+    )[[1]]
+
+    # Leave unexpected values as NA
+    if (length(time_parts) != 2) {
+      next
+    }
+
+    # Parse the beginning of the time interval
+    start_time <- parse_date_time(
+      paste("2000-01-01", time_parts[1]),
+      orders = "Ymd IMp",
+      tz = "UTC"
+    )
+
+    # Parse the end of the time interval
+    end_time <- parse_date_time(
+      paste("2000-01-01", time_parts[2]),
+      orders = "Ymd IMp",
+      tz = "UTC"
+    )
+
+    # Calculate the midpoint of the interval
+    midpoint_times[i] <- start_time +
+      (end_time - start_time) / 2
+  }
+
+  return(midpoint_times)
+}
+
+# Test the time midpoint helper function
+time_test <- c(
+  "10:20 a.m. to 10:24 a.m.",
+  "4:10 a.m. to 4:19 a.m.",
+  NA
+)
+
+parse_time_midpoint(time_test)
+```
 
 #### Creating the Single-Year PUMS Query Function
 
@@ -448,6 +523,64 @@ get_pums_data <- function(
   # Convert the returned content into a tibble
   pums_data <- parse_pums_response(pums_content)
 
+  # Identify numeric variables that are not time variables
+  regular_numeric_vars <- setdiff(
+    numeric_vars,
+    c("JWAP", "JWDP")
+  )
+
+  # Convert the regular numeric variables to numeric values
+  for (variable in regular_numeric_vars) {
+    pums_data[[variable]] <- as.numeric(
+      pums_data[[variable]]
+    )
+  }
+
+  # Identify the requested time variables
+  time_vars <- intersect(
+  numeric_vars,
+  c("JWAP", "JWDP")
+  )
+
+  # Convert requested time variables to midpoint time values
+  for (variable in time_vars) {
+
+    # Obtain the Census time labels for the selected year
+    time_labels <- unlist(
+      year_values[[variable]]
+    )
+  
+    # Match each Census code to its corresponding time range
+    time_ranges <- unname(
+      time_labels[pums_data[[variable]]]
+    )
+  
+    # Convert each time range to its midpoint
+    pums_data[[variable]] <- parse_time_midpoint(
+      time_ranges
+    )
+  }
+  
+  # Convert the selected categorical variables to labeled factors
+  for (variable in categorical_vars) {
+
+    # Obtain the value labels for the selected survey year
+    value_labels <- year_values[[variable]]
+
+    # Convert the variable to a factor using the Census labels
+    pums_data[[variable]] <- factor(
+      pums_data[[variable]],
+      levels = names(value_labels),
+      labels = unlist(value_labels)
+    )
+  }
+  
+  # Add the census class to the returned tibble
+  class(pums_data) <- c(
+    "census",
+    class(pums_data)
+  )
+  
   return(pums_data)
 }
 
@@ -456,6 +589,9 @@ pums_test <- get_pums_data()
 
 # Examine the resulting tibble
 head(pums_test)
+
+# Examine the data types of the returned variables
+str(pums_test)
 
 # Test the function using the Region geography
 pums_region_test <- get_pums_data(
@@ -468,3 +604,25 @@ head(pums_region_test)
 ```
 
 The single-year function successfully validates the requested year, variables, and geography and returns the selected PUMS data as a tibble. The default call returns data for North Carolina, while the second test confirms that the function can also return data for a specified Census region.
+
+The returned PUMS data are then converted to appropriate data types. Standard numeric variables are converted from character values to numeric values, while categorical variables are converted to factors using the year-specific Census labels stored in the variable metadata. Time variables are excluded from the standard numeric conversion because they require separate processing.
+
+```{r}
+# Test the function with both Census time variables
+pums_time_test <- get_pums_data(
+  numeric_vars = c(
+    "AGEP",
+    "JWAP",
+    "JWDP",
+    "PWGTP"
+  )
+)
+
+# Examine the first few observations
+head(pums_time_test)
+
+# Examine the data types and census class
+str(pums_time_test)
+class(pums_time_test)
+```
+
