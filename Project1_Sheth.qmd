@@ -722,3 +722,4 @@ str(pums_cross_year_test)
 class(pums_cross_year_test)
 ```
 
+The cross-year test confirms that the multi-year function successfully combines survey years that use different underlying state metadata while preserving the expected variable types and census class.
