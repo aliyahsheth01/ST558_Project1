@@ -111,9 +111,9 @@ get_variable_values <- function(year) {
   
   # Extract the available values for each required variable
   for (variable in variables) {
-   variable_values[variable] <- list(
-     metadata$variables[[variable]]$values$item
-   )
+    variable_values[variable] <- list(
+      metadata$variables[[variable]]$values$item
+    )
   }
 
   return(variable_values)
@@ -644,4 +644,81 @@ head(
 )
 ```
 
+#### Creating a Function to Combine Multiple Survey Years
+
+The single-year PUMS function can be used to retrieve data for more than one survey year. The function below allows the user to specify multiple years while retaining the same numeric, categorical, and geographic options. The single-year function will be called for each requested year, and the resulting data will then be combined into one tibble with a variable identifying the survey year.
+
+```{r}
+# Function to retrieve and combine multiple years of PUMS data
+get_pums_years <- function(
+  years = c(2023, 2024),
+  numeric_vars = c("AGEP", "PWGTP"),
+  categorical_vars = "SEX",
+  geography = "State",
+  geography_value = NULL
+) {
+
+  # Define valid survey years
+  valid_years <- c(2021, 2022, 2023, 2024)
+
+  # Check that at least one valid survey year was provided
+  if (
+    length(years) < 1 ||
+    any(!years %in% valid_years)
+  ) {
+    stop("Years must contain one or more of 2021, 2022, 2023, or 2024.")
+  }
+  # Create an empty list to store the yearly data
+  yearly_data <- list()
+
+  # Retrieve the PUMS data for each requested year
+  for (current_year in years) {
+
+    year_data <- get_pums_data(
+      year = current_year,
+      numeric_vars = numeric_vars,
+      categorical_vars = categorical_vars,
+      geography = geography,
+      geography_value = geography_value
+    )
+
+    # Add the survey year to the data
+    year_data$year <- current_year
+
+    # Store the year's data in the list
+    yearly_data[[as.character(current_year)]] <- year_data
+  }
+  # Combine the yearly tibbles
+  combined_data <- dplyr::bind_rows(yearly_data)
+
+  return(combined_data)
+}
+
+# Test the multi-year function using its default values
+pums_years_test <- get_pums_years()
+
+# Examine the first few observations
+head(pums_years_test)
+
+# Examine the survey years included
+table(pums_years_test$year)
+
+# Check the resulting class
+class(pums_years_test)
+```
+```{r}
+# Test the multi-year function across different state metadata years
+pums_cross_year_test <- get_pums_years(
+  years = c(2022, 2024)
+)
+
+# Examine the survey years included
+table(pums_cross_year_test$year)
+
+# Check the resulting structure
+str(pums_cross_year_test)
+
+# Check the resulting class
+class(pums_cross_year_test)
+```
 
