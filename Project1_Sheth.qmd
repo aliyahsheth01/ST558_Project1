@@ -971,4 +971,107 @@ plot(
 ```
 The custom plot method successfully creates PWGTP-weighted boxplots for both standard categorical variables and survey year while validating the requested variable types.
 
+## Investigation
 
+To demonstrate the data-processing, summary, and plotting functions developed above, an investigation of North Carolina PUMS data from 2021 through 2024 is conducted. The analysis examines how travel time to work varies by sex and survey year.
+
+```{r}
+# Retrieve North Carolina data for the investigation
+investigation_data <- get_pums_years(
+  years = c(2021, 2022, 2023, 2024),
+  numeric_vars = c(
+    "JWMNP",
+    "PWGTP"
+  ),
+  categorical_vars = "SEX",
+  geography = "State",
+  geography_value = "37"
+)
+
+# Examine the first few observations
+head(investigation_data)
+
+# Check the variable types
+str(investigation_data)
+
+# Confirm the census class
+class(investigation_data)
+```
+Because travel time to work is not applicable to every PUMS observation, only observations with a positive JWMNP value are included in the travel-time analysis. The Census person weights are retained so that the remaining observations are summarized using PWGTP.
+
+```{r}
+# Keep observations with a positive reported travel time to work
+travel_data <- investigation_data[
+  !is.na(investigation_data$JWMNP) &
+    investigation_data$JWMNP > 0,
+]
+
+# Confirm that the census class is retained
+class(travel_data)
+
+# Summarize travel time and the categorical variables
+summary(
+  travel_data,
+  numeric_vars = "JWMNP",
+  categorical_vars = c("SEX", "year")
+)
+```
+To examine whether travel time changed over the study period, the 2021 and 2024 observations are summarized separately. This allows the weighted mean and standard deviation of travel time to be compared between the first and last survey years included in the analysis.
+
+```{r}
+# Create separate data sets for 2021 and 2024
+travel_2021 <- travel_data[
+  travel_data$year == 2021,
+]
+
+travel_2024 <- travel_data[
+  travel_data$year == 2024,
+]
+
+# Summarize 2021 travel time
+summary(
+  travel_2021,
+  numeric_vars = "JWMNP",
+  categorical_vars = "SEX"
+)
+
+# Summarize 2024 travel time
+summary(
+  travel_2024,
+  numeric_vars = "JWMNP",
+  categorical_vars = "SEX"
+)
+```
+
+The weighted mean travel time increased from approximately 24.6 minutes in 2021 to 25.8 minutes in 2024, an increase of about 1.2 minutes. The weighted standard deviations were similar in the two years, suggesting that the overall variability in travel time remained relatively consistent.
+
+The distribution of travel time is next examined graphically. First, travel time is compared across all four survey years using the custom plot method. The boxplot incorporates PWGTP so that observations contribute according to their Census person weights.
+
+```{r}
+# Compare travel time across survey years
+plot(
+  travel_data,
+  cat_var = "year",
+  num_var = "JWMNP"
+)
+```
+
+The boxplots show that the distributions of travel time are broadly similar across the four survey years. This is consistent with the numerical summaries, although the higher weighted mean observed in 2024 suggests a modest increase in travel time compared with 2021.
+
+```{r}
+# Compare travel time by sex
+plot(
+  travel_data,
+  cat_var = "SEX",
+  num_var = "JWMNP"
+)
+```
+Travel time is also compared by sex using the custom plot method. This provides a second view of the travel-time distribution and demonstrates use of the plotting method with a different categorical variable.
+
+The sex-based boxplot provides a direct visual comparison of the travel-time distributions for male and female respondents and demonstrates that the custom plotting method can also be applied to a categorical variable other than survey year.
+
+### Investigation Summary
+
+Overall, the investigation found a modest increase in weighted mean travel time in North Carolina from approximately 24.6 minutes in 2021 to 25.8 minutes in 2024. The weighted standard deviations were similar, indicating that the overall variability in travel time remained relatively consistent. The year-based boxplots also showed broadly similar travel-time distributions across the four survey years. Travel time was additionally examined by sex using the custom plotting method.
+
+Together, these analyses demonstrate how the API, summary, and plotting functions developed in this project can be used to retrieve, combine, summarize, and visualize Census PUMS data across multiple survey years.
