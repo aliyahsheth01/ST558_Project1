@@ -726,6 +726,8 @@ The cross-year test confirms that the multi-year function successfully combines 
 
 ## Part 2: Generic Functions for Summarizing and Plotting
 
+### Creating a Custom Summary Method
+
 The PUMS data use PWGTP as a person-level weight, meaning that each row may represent more than one person in the population. Therefore, summaries of the Census data should account for PWGTP rather than treating each row as representing one individual.
 
 A custom summary method is created for objects with the census class. The method allows the user to specify numeric and categorical variables to summarize. If variables are not specified, the function identifies the appropriate variables from the Census tibble.
