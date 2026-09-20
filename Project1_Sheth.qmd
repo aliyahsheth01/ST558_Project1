@@ -723,3 +723,250 @@ class(pums_cross_year_test)
 ```
 
 The cross-year test confirms that the multi-year function successfully combines survey years that use different underlying state metadata while preserving the expected variable types and census class.
+
+## Part 2: Generic Functions for Summarizing and Plotting
+
+The PUMS data use PWGTP as a person-level weight, meaning that each row may represent more than one person in the population. Therefore, summaries of the Census data should account for PWGTP rather than treating each row as representing one individual.
+
+A custom summary method is created for objects with the census class. The method allows the user to specify numeric and categorical variables to summarize. If variables are not specified, the function identifies the appropriate variables from the Census tibble.
+
+```{r}
+# Custom summary method for census objects
+summary.census <- function(
+  object,
+  numeric_vars = NULL,
+  categorical_vars = NULL
+) {
+
+  # Identify default numeric variables
+  if (is.null(numeric_vars)) {
+
+    numeric_vars <- character(0)
+
+    for (variable in names(object)) {
+
+      if (
+        is.numeric(object[[variable]]) &&
+        !variable %in% c(
+          "PWGTP",
+          "JWAP",
+          "JWDP",
+          "year"
+        )
+      ) {
+        numeric_vars <- c(
+          numeric_vars,
+          variable
+        )
+      }
+    }
+  }
+
+  # Identify default categorical variables
+  if (is.null(categorical_vars)) {
+
+    categorical_vars <- character(0)
+
+    for (variable in names(object)) {
+
+      if (
+        is.factor(object[[variable]]) ||
+        is.character(object[[variable]]) ||
+        variable == "year"
+      ) {
+        categorical_vars <- c(
+          categorical_vars,
+          variable
+        )
+      }
+    }
+  }
+
+  # Create an empty list for numeric summaries
+  numeric_summaries <- list()
+
+  # Calculate weighted summaries for each numeric variable
+  for (variable in numeric_vars) {
+
+    numeric_values <- object[[variable]]
+    weights <- object$PWGTP
+
+    # Keep observations with nonmissing values and weights
+    keep <- !is.na(numeric_values) & !is.na(weights)
+
+    numeric_values <- numeric_values[keep]
+    weights <- weights[keep]
+
+    # Calculate the weighted mean
+    weighted_mean <- sum(
+      numeric_values * weights
+    ) / sum(weights)
+
+    # Calculate the weighted standard deviation
+    weighted_sd <- sqrt(
+      sum(
+        numeric_values^2 * weights
+      ) / sum(weights) -
+        weighted_mean^2
+    )
+
+    # Store the results for the variable
+    numeric_summaries[[variable]] <- c(
+      mean = weighted_mean,
+      sd = weighted_sd
+    )
+  }
+
+  # Create an empty list for categorical summaries
+  categorical_summaries <- list()
+
+  # Calculate weighted counts for each categorical variable
+  for (variable in categorical_vars) {
+
+    category_values <- object[[variable]]
+    weights <- object$PWGTP
+
+    # Keep observations with nonmissing values and weights
+    keep <- !is.na(category_values) & !is.na(weights)
+
+    category_values <- category_values[keep]
+    weights <- weights[keep]
+
+    # Identify the categories present
+    categories <- unique(category_values)
+
+    # Create an empty vector for the weighted counts
+    weighted_counts <- numeric(
+      length(categories)
+    )
+
+    names(weighted_counts) <- as.character(
+      categories
+    )
+
+    # Calculate the weighted count for each category
+    for (i in seq_along(categories)) {
+
+      weighted_counts[i] <- sum(
+        weights[
+          category_values == categories[i]
+        ]
+      )
+    }
+
+    # Store the results for the variable
+    categorical_summaries[[variable]] <- weighted_counts
+  }
+
+  # Return all summaries as a named list
+  return(
+    list(
+      numeric = numeric_summaries,
+      categorical = categorical_summaries
+    )
+  )
+}
+
+# Test the complete census summary method
+summary(pums_cross_year_test)
+
+# Test the summary method with user-specified variables
+summary(
+  pums_cross_year_test,
+  numeric_vars = "AGEP",
+  categorical_vars = c("SEX", "year")
+)
+```
+
+The custom summary method successfully produces PWGTP-weighted numeric and categorical summaries and allows the user to override the default variable selections.
+
+### Creating a Custom Plot Method
+
+A custom plot method is created for objects with the census class. The user specifies one categorical variable and one numeric variable. A weighted boxplot is then created using PWGTP so that observations contribute according to their Census person weights.
+
+```{r}
+# Custom plot method for census objects
+plot.census <- function(
+  x,
+  cat_var,
+  num_var,
+  ...
+) {
+
+  # Check that one categorical variable was provided
+  if (length(cat_var) != 1) {
+    stop("One categorical variable must be specified.")
+  }
+
+  # Check that one numeric variable was provided
+  if (length(num_var) != 1) {
+    stop("One numeric variable must be specified.")
+  }
+
+  # Check that the requested variables are in the data
+  if (!cat_var %in% names(x)) {
+    stop("The categorical variable is not in the census data.")
+  }
+
+  if (!num_var %in% names(x)) {
+    stop("The numeric variable is not in the census data.")
+  }
+
+  # Check that the categorical variable has an appropriate type
+  if (
+    cat_var != "year" &&
+    !is.factor(x[[cat_var]]) &&
+    !is.character(x[[cat_var]])
+  ) {
+    stop("The categorical variable must be categorical.")
+  }
+
+  # Check that the numeric variable is numeric
+  if (!is.numeric(x[[num_var]])) {
+    stop("The numeric variable must be numeric.")
+  }
+
+  # Treat year as categorical when used for plotting
+  plot_data <- x
+
+  if (cat_var == "year") {
+    plot_data[[cat_var]] <- factor(
+      plot_data[[cat_var]]
+    )
+  }
+  
+  # Create the weighted boxplot
+  census_plot <- ggplot2::ggplot(
+    plot_data,
+    ggplot2::aes(
+      x = get(cat_var),
+      y = get(num_var),
+      weight = PWGTP
+    )
+  ) +
+    ggplot2::geom_boxplot() +
+    ggplot2::labs(
+      x = cat_var,
+      y = num_var
+    )
+
+  return(census_plot)
+}
+
+# Test the census plot method
+plot(
+  pums_cross_year_test,
+  cat_var = "SEX",
+  num_var = "AGEP"
+)
+
+# Test year as the categorical plotting variable
+plot(
+  pums_cross_year_test,
+  cat_var = "year",
+  num_var = "AGEP"
+)
+```
+The custom plot method successfully creates PWGTP-weighted boxplots for both standard categorical variables and survey year while validating the requested variable types.
+
+
