@@ -7,7 +7,7 @@ editor: visual
 
 ## Introduction
 
-This project develops functions for retrieving, processing, summarizing, and visualizing data from the Census Public Use Microdata Sample (PUMS) API. Data from the 2021 through 2024 surveys will be used. The project first processes Census variable metadata, then develops functions to query and combine PUMS data, followed by custom methods for weighted summaries and graphical displays.
+This project develops functions for retrieving, processing, summarizing, and visualizing data from the Census Public Use Microdata Sample (PUMS) API. Data from the 2021 through 2024 surveys will be used. The project first processes Census variable metadata, then develops functions to query and combine PUMS data, followed by custom methods for weighted summaries and graphical displays. The project concludes with an investigation of North Carolina travel time to work from 2021 through 2024, including comparisons by survey year and sex.
 
 ## Part 1: Data Processing
 
@@ -183,12 +183,17 @@ The saved object contains the variable-value information for each survey year an
 The next step is to query the PUMS API for person-level data. Before creating a general function, a single API request is examined to understand the structure of the data returned by the Census API.
 
 ```{r}
-# Retrieve Census API key from the environment
+# Retrieve the Census API key from the environment, if available
 census_key <- Sys.getenv("CENSUS_API_KEY")
 
-# Check that an API key is available
-if (census_key == "") {
-  stop("Census API key not found.")
+# Create an optional API key parameter
+key_parameter <- ""
+
+if (census_key != "") {
+  key_parameter <- paste0(
+    "&key=",
+    census_key
+  )
 }
 
 # Create a sample 2024 PUMS API request
@@ -196,7 +201,7 @@ pums_url <- paste0(
   "https://api.census.gov/data/2024/acs/acs1/pums",
   "?get=SEX,AGEP,PWGTP",
   "&for=state:37",
-  "&key=", census_key
+  key_parameter
 )
 
 # Query the Census API
@@ -208,7 +213,7 @@ status_code(pums_response)
 
 A status code of 200 indicates that the PUMS API request was successful. 
 
-The returned content is then parsed to examine how the observations are organized. The current Census Microdata API requires an API key for data queries. Therefore, an API key stored as an environment variable is used for the PUMS queries in this project.
+The returned content is then parsed to examine how the observations are organized. A Census API key is optional for these queries. If an API key is available as an environment variable, it is added to the request; otherwise, the request is submitted without a key.
 
 ```{r}
 # Parse the API response
@@ -394,7 +399,7 @@ get_pums_data <- function(
     "FER", "HHL", "SCH", "SCHL", "SEX"
   )
 
- # Check that at least one categorical variable was provided
+  # Check that at least one categorical variable was provided
   if (length(categorical_vars) < 1) {
     stop("At least one categorical variable must be included.")
   }
@@ -500,13 +505,19 @@ get_pums_data <- function(
     collapse = ","
   )
 
-  # Retrieve the Census API key
+ # Retrieve the Census API key from the environment, if available
   census_key <- Sys.getenv("CENSUS_API_KEY")
-
-  if (census_key == "") {
-    stop("Census API key not found.")
+  
+  # Create an optional API key parameter
+  key_parameter <- ""
+  
+  if (census_key != "") {
+    key_parameter <- paste0(
+      "&key=",
+      census_key
+    )
   }
-
+  
   # Build the API URL
   pums_url <- paste0(
     "https://api.census.gov/data/",
@@ -514,7 +525,7 @@ get_pums_data <- function(
     "/acs/acs1/pums",
     "?get=", variable_string,
     "&for=", api_geography, ":", api_geography_value,
-    "&key=", census_key
+    key_parameter
   )
 
   # Query the Census API
@@ -887,6 +898,8 @@ The custom summary method successfully produces PWGTP-weighted numeric and categ
 A custom plot method is created for objects with the census class. The user specifies one categorical variable and one numeric variable. A weighted boxplot is then created using PWGTP so that observations contribute according to their Census person weights.
 
 ```{r}
+#| warning: false
+
 # Custom plot method for census objects
 plot.census <- function(
   x,
@@ -1058,6 +1071,8 @@ plot(
 
 The boxplots show that the distributions of travel time are broadly similar across the four survey years. This is consistent with the numerical summaries, although the higher weighted mean observed in 2024 suggests a modest increase in travel time compared with 2021.
 
+Travel time is also compared by sex using the custom plot method. This provides a second view of the travel-time distribution and demonstrates use of the plotting method with a different categorical variable.
+
 ```{r}
 # Compare travel time by sex
 plot(
@@ -1066,12 +1081,12 @@ plot(
   num_var = "JWMNP"
 )
 ```
-Travel time is also compared by sex using the custom plot method. This provides a second view of the travel-time distribution and demonstrates use of the plotting method with a different categorical variable.
-
-The sex-based boxplot provides a direct visual comparison of the travel-time distributions for male and female respondents and demonstrates that the custom plotting method can also be applied to a categorical variable other than survey year.
+The male and female boxplots show broadly similar travel-time distributions, with substantial overlap in their central ranges. Any visual differences between the two groups are modest relative to the overall spread in travel time.
 
 ### Investigation Summary
 
-Overall, the investigation found a modest increase in weighted mean travel time in North Carolina from approximately 24.6 minutes in 2021 to 25.8 minutes in 2024. The weighted standard deviations were similar, indicating that the overall variability in travel time remained relatively consistent. The year-based boxplots also showed broadly similar travel-time distributions across the four survey years. Travel time was additionally examined by sex using the custom plotting method.
+Overall, the investigation found a modest increase in weighted mean travel time in North Carolina from approximately 24.6 minutes in 2021 to 25.8 minutes in 2024. The weighted standard deviations were similar, indicating that the overall variability in travel time remained relatively consistent. The year-based boxplots also showed broadly similar travel-time distributions across the four survey years. The sex-based boxplots also showed broadly similar travel-time distributions for male and female respondents.
 
 Together, these analyses demonstrate how the API, summary, and plotting functions developed in this project can be used to retrieve, combine, summarize, and visualize Census PUMS data across multiple survey years.
+
+
